@@ -7,9 +7,12 @@ ver = meson.project_version()
 add_project_arguments(f'-DVERSION=@ver@', language : 'c')
 add_project_arguments('-D_XOPEN_SOURCE=700', language : ['c'])
 
-ldns = dependency('ldns')
-inih = dependency('inih')
-nl = [dependency('libnl-3.0'), dependency('libnl-route-3.0')]
+ldns = dependency('ldns', version : '>=1.7.1')
+inih = dependency('inih', version : '>=53')
+nl = [
+    dependency('libnl-3.0', version : '>=3.4.0'),
+    dependency('libnl-route-3.0', version : '>=3.4.0')
+]
 
 subdir('src')
 executable('ipup', ipup_src,
