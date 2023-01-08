@@ -14,6 +14,8 @@ on specified interfaces and update a DNS entry using RFC 2136.
  * libnl
 
 These should be easily installable using your system's package manager.
+Note that on some distributions you may have to install libnl and
+libnl-route separately.
 
 ## Actually building
 
