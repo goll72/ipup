@@ -43,7 +43,7 @@ $ meson install -C build
 
 Ipup's configuration file uses a syntax similar to INI. For instance:
 
-```
+```ini
 [wlan0]
 server = example.com
 # default
@@ -85,9 +85,8 @@ max-retry = 10
  - `key-file` is a file containing only the Base64-encoded key secret.
  - `key-algo` is the encryption algorithm used. Possible values can be listed with
     `ldns-keygen -a list`.
- - `ttl` specifies the TTL to be used for the records. It accepts the suffixes
-    `s` for seconds (default), `m` for minutes, `h` for hours and `d` for days.
-    The default TTL used if it isn't specified, and neither is `respect-ttl`, is 1 hour.
+ - `ttl` specifies the TTL to be used for the records. The default TTL used if
+    it isn't specified, and neither is `respect-ttl`, is 1 hour.
  - `respect-ttl` makes the TTL of the DNS record match the TTL of the given
     address (valid lifetime). You should only enable it if you know your leases are
     consistently short enough.
