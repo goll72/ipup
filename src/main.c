@@ -92,4 +92,8 @@ int main(int argc, char * const *argv)
     fclose(conf);
 
     struct nl_cache_mngr *nlmngr = nl_run(confmap);
+
+    conf_free(confmap);
+    nl_free(nlmngr);
+    dns_free_sys_resolver();
 }
