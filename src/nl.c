@@ -1,45 +1,108 @@
 #include <err.h>
+#include <signal.h>
+#include <sysexits.h>
+
+#include <net/if.h>
+#include <arpa/inet.h>
 
 #include <netlink/cache.h>
 #include <netlink/netlink.h>
 #include <netlink/route/addr.h>
 
-static void handler_nl_cache_change(struct nl_cache *cache,
+#include "dns.h"
+#include "map.h"
+#include "conf.h"
+
+static void cache_change_cb(struct nl_cache *cache,
         struct nl_object *obj, int action, void *data)
 {
-    struct rtnl_addr *addr = (struct rtnl_addr *)obj;
+    // Duplicate address, ignore
+    if (action == NL_ACT_CHANGE)
+        return;
 
-    nl_object_dump(obj, &(struct nl_dump_params) {
-        .dp_type = NL_DUMP_LINE,
-        .dp_fd = stdout
-    });
+    struct rtnl_addr *rtaddr = (struct rtnl_addr *)obj;
+
+    const int af = rtnl_addr_get_family(rtaddr);
+    const int scope = rtnl_addr_get_scope(rtaddr);
+
+    // We are only interested in global scope
+    // addresses and we do not support IPv4
+    if (scope != 0 || af == AF_INET)
+        return;
+
+    const struct nl_addr *nladdr = rtnl_addr_get_local(rtaddr);
+    const void *addr = nl_addr_get_binary_addr(nladdr);
+
+    // Get the interface name to index the config map
+    char ifbuf[IF_NAMESIZE] = {0};
+    if_indextoname(rtnl_addr_get_ifindex(rtaddr), ifbuf);
+
+    struct map *confmap = data;
+    conf_t *conf = map_get(confmap, ifbuf, strlen(ifbuf));
+
+    // Interface not listed
+    if (!conf)
+        return;
+
+    const uint32_t ttl = conf->opts & CONF_OPT_RESPECT_TTL
+            ? rtnl_addr_get_valid_lifetime(rtaddr)
+            : conf->ttl;
+
+    dns_do_update(conf->resolv, conf->zone, conf->record,
+            af, addr, action == NL_ACT_DEL, ttl);
 }
 
-struct nl_cache_mngr *nl_init(void) {
+static volatile bool signaled = false;
+
+static void sig_handle(int signo)
+{
+    (void)signo;
+    signaled = true;
+}
+
+struct nl_cache_mngr *nl_run(struct map *confmap) {
+    struct sigaction sa = {
+        .sa_handler = sig_handle,
+        .sa_flags = SA_RESETHAND
+    };
+
+    sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
+
     int ret;
 
-    struct nl_cache_mngr *nl_mngr;
-    ret = nl_cache_mngr_alloc(NULL, NETLINK_ROUTE, NL_AUTO_PROVIDE, &nl_mngr);
+    struct nl_cache_mngr *nlmngr;
+    ret = nl_cache_mngr_alloc(NULL, NETLINK_ROUTE, NL_AUTO_PROVIDE, &nlmngr);
 
     if (ret < 0)
-        errx(2, "Failed to set up Netlink cache manager: %s", nl_geterror(ret));
+        errx(EX_SOFTWARE, "Failed to set up Netlink cache manager: %s", nl_geterror(ret));
 
     struct nl_cache *cache;
     ret = rtnl_addr_alloc_cache(NULL, &cache);
 
     if (ret < 0)
-        errx(2, "Failed to allocate Netlink address cache: %s", nl_geterror(ret));
+        errx(EX_SOFTWARE, "Failed to allocate Netlink address cache: %s", nl_geterror(ret));
 
-    ret = nl_cache_mngr_add_cache(nl_mngr, cache, handler_nl_cache_change, NULL);
+    ret = nl_cache_mngr_add_cache(nlmngr, cache, cache_change_cb, confmap);
 
     if (ret < 0)
         errx(2, "Failed to add cache to Netlink cache manager: %s", nl_geterror(ret));
 
-    /* while (1) {
-        ret = nl_cache_mngr_data_ready(nl_mngr);
-        if (ret < 0)
-            errx(2, "Failed to listen for events on Netlink channel: %s", nl_geterror(ret));
-    } */
+    // Runs until an error occurs or the user requests termination
+    while (1) {
+        int ret = nl_cache_mngr_poll(nlmngr, -1);
 
-    return nl_mngr;
+        if (signaled)
+            break;
+
+        if (ret < 0)
+            errx(EX_OSERR, "Failed to poll on Netlink channel: %s", nl_geterror(ret));
+    }
+
+    return nlmngr;
+}
+
+void nl_free(struct nl_cache_mngr *nlmngr)
+{
+    nl_cache_mngr_free(nlmngr);
 }

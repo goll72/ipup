@@ -1,12 +1,14 @@
-#include <err.h>
 #include <unistd.h>
 #include <stdbool.h>
+#include <sysexits.h>
 
 #include <sys/stat.h>
 
 #include "nl.h"
+#include "dns.h"
 #include "util.h"
 #include "conf.h"
+#include "xalloc.h"
 
 int main(int argc, char * const *argv)
 {
@@ -19,7 +21,7 @@ int main(int argc, char * const *argv)
                 confpath = optarg;
                 break;
             case 'v':
-                printf("%s v" STR(VERSION) " built on" __DATE__ "\n", argv[0]);
+                printf("%s v" VERSION " built on " __TIME__ ", " __DATE__ "\n", argv[0]);
                 return 0;
             case 'h': default:
                 fprintf(stderr,
@@ -27,7 +29,7 @@ int main(int argc, char * const *argv)
                         "  -h    Shows this help menu\n"
                         "  -v    Version information\n"
                         "  -c    Specify configuration file path\n", argv[0]);
-                return opt == 'h';
+                return opt == 'h' ? EX_OK : EX_USAGE;
         }
     }
 
@@ -47,21 +49,18 @@ int main(int argc, char * const *argv)
 
     bool foundconf = confpath;
 
+    // If no config file specified, try to find one concatenating
+    // pref and suff and checking whether it exists
     if (!foundconf) {
-        for (int i = 0; i < sizeof pref / sizeof pref[0]; i++) {
+        for (size_t i = 0; i < sizeof pref / sizeof pref[0]; i++) {
             if (!pref[i])
                 continue;
 
             size_t preflen = strlen(pref[i]);
             size_t sufflen = strlen(suff[i]);
 
-            char *tmp = realloc(confpath, preflen + sufflen + 1);
-
-            if (!tmp)
-                errx(2, "Failed to allocate memory");
-
-            confpath = tmp;
-            *(char *)mempcpy(mempcpy(confpath, pref[i], preflen), suff[i], sufflen) = 0;
+            confpath = xrealloc(confpath, preflen + sufflen + 1);
+            concat(confpath, pref[i], preflen, suff[i], sufflen);
 
             if (access(confpath, R_OK) != -1) {
                 foundconf = true;
@@ -71,25 +70,26 @@ int main(int argc, char * const *argv)
     }
 
     if (!foundconf)
-        errx(1, "Could not find a config file");
+        errx(EX_NOINPUT, "Could not find a config file");
 
     FILE *conf = fopen(confpath, "r");
 
     if (!conf)
-        errx(1, "Config file specified not found");
+        errx(EX_NOINPUT, "Config file specified not found");
 
+    // Check that it really is a file
     struct stat sb;
     fstat(fileno(conf), &sb);
 
     if ((sb.st_mode & S_IFMT) != S_IFREG)
-        errx(1, "Invalid path, expected file");
+        errx(EX_NOINPUT, "Invalid path, expected file");
 
-    readconf(conf, confpath);
+    struct map *confmap = conf_read(conf, confpath);
 
     if (confpath != oconfpath)
         free(confpath);
 
     fclose(conf);
 
-    struct nl_cache_mngr *nl_mngr = nl_init();
+    struct nl_cache_mngr *nlmngr = nl_run(confmap);
 }

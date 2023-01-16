@@ -32,6 +32,19 @@ err_map:
     return NULL;
 }
 
+struct bucket *alloc_bucket(struct bucket *bucket)
+{
+    struct bucket *new = calloc(1, sizeof(struct bucket));
+
+    if (!new)
+        return NULL;
+
+    while (bucket->next && bucket->next->key)
+        bucket = bucket->next;
+
+    return bucket->next = new;
+}
+
 static void free_buckets(struct map *map, bool free_keys)
 {
     for (size_t i = 0, j = 0; i < map->size && j < map->used; i++) {
@@ -106,6 +119,52 @@ bool map_resize(struct map *map, size_t size)
     map->buckets = buckets;
     map->size = size;
 
+    return true;
+}
+
+void *map_get(struct map *map, const char *key, size_t len)
+{
+    uint64_t hash = map->hfunc(key, len);
+    struct bucket *bucket = &map->buckets[hash % map->size];
+
+    while (bucket && bucket->key) {
+        if (MATCH(bucket, hash, key, len))
+            return bucket->data;
+
+        bucket = bucket->next;
+    }
+
+    return NULL;
+}
+
+bool map_set(struct map *map, const char *key, size_t len, void *elem)
+{
+    if ((double)(map->used + 1)/map->size >= LOAD_FACTOR)
+        map_resize(map, map->size * 2);
+
+    uint64_t hash = map->hfunc(key, len);
+    struct bucket *bucket = &map->buckets[hash % map->size];
+    struct bucket *prev = bucket;
+
+    while (bucket->next && bucket->next->key) {
+        if (MATCH(bucket, hash, key, len)) {
+            bucket->data = elem;
+            return true;
+        }
+
+        prev = bucket;
+        bucket = bucket->next;
+    }
+
+    if ((bucket->key || bucket == prev->next) && !(bucket = alloc_bucket(bucket)))
+        return false;
+    bucket->hash = hash;
+    bucket->data = elem;
+    bucket->key = malloc(sizeof(struct key) + len);
+    bucket->key->len = len;
+    memcpy(bucket->key->data, key, len);
+
+    map->used++;
     return true;
 }
 

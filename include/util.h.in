@@ -1,0 +1,15 @@
+#ifndef UTIL_H
+#define UTIL_H
+
+#include <string.h>
+
+static inline void concat(char *dest, const char *a, size_t alen, const char *b, size_t blen)
+{
+    char *tmp = (char *)memcpy(dest, a, alen) + alen;
+    tmp = (char *)memcpy(tmp, b, blen) + blen;
+    *tmp = 0;
+}
+
+#define VERSION "@VCS_TAG@"
+
+#endif

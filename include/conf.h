@@ -1,25 +1,21 @@
 #include <stdint.h>
 
-#include <ldns/ldns.h>
+#include <ldns/resolver.h>
 #include <ini.h>
 
-enum rectype {
-    REC_A,
-    REC_AAAA,
-    REC_BOTH
-};
-
-#define CONF_DELETE_EXISTING (1 << 1)
-#define CONF_VERIFY_REACHABLE (1 << 2)
-#define CONF_VERIFY_DUPLICATE (1 << 3)
+#define CONF_OPT_DELETE_EXISTING (1 << 0)
+#define CONF_OPT_RESPECT_TTL     (1 << 1)
+#define CONF_OPT_VERIFY_UPDATE   (1 << 2)
 
 typedef struct conf {
-    char *server;
-    uint16_t port;
+    ldns_rdf *server;
+    ldns_rdf *zone;
+    ldns_rdf *record;
+    ldns_resolver *resolv;
     ldns_tsig_credentials cred;
-    char *zone, *record;
-    enum rectype rectype;
+    uint32_t ttl;
     uint8_t opts;
 } conf_t;
 
-struct map *readconf(FILE *conf, const char *filename);
+struct map *conf_read(FILE *, const char *);
+void conf_free(struct map *);
