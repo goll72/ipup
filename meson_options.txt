@@ -1,0 +1,4 @@
+option('tests',
+    description : 'Compile and run unit tests',
+    type : 'boolean',
+    value : false)
