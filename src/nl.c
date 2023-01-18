@@ -37,18 +37,18 @@ static void cache_change_cb(struct nl_cache *cache,
     char ifbuf[IF_NAMESIZE] = {0};
     if_indextoname(rtnl_addr_get_ifindex(rtaddr), ifbuf);
 
-    struct map *confmap = data;
-    conf_t *conf = map_get(confmap, ifbuf, strlen(ifbuf));
+    struct conf *confmap = data;
+    ifconf_t *ifconf = map_get(confmap->ifaces, ifbuf, strlen(ifbuf));
 
     // Interface not listed
-    if (!conf)
+    if (!ifconf)
         return;
 
-    const uint32_t ttl = conf->opts & CONF_OPT_RESPECT_TTL
+    const uint32_t ttl = ifconf->opts & CONF_OPT_IFACE_RESPECT_TTL
             ? rtnl_addr_get_valid_lifetime(rtaddr)
-            : conf->ttl;
+            : ifconf->ttl;
 
-    dns_do_update(conf->resolv, conf->zone, conf->record,
+    dns_do_update(ifconf->server->resolv, ifconf->zone, ifconf->record,
             af, addr, action == NL_ACT_DEL, ttl);
 }
 
@@ -60,7 +60,7 @@ static void sig_handle(int signo)
     signaled = true;
 }
 
-struct nl_cache_mngr *nl_run(struct map *confmap) {
+struct nl_cache_mngr *nl_run(struct conf *confmap) {
     struct sigaction sa = {
         .sa_handler = sig_handle,
         .sa_flags = SA_RESETHAND

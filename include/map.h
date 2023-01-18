@@ -46,6 +46,21 @@ static void map_foreach_##Td(struct map *map, bool (*func)(char *, size_t, Td *)
             bucket = bucket->next; \
         } \
     } \
+} \
+\
+static Td *map_get_set_##Td(struct map *map, const char *key, size_t len) \
+{ \
+    Td *value = map_get(map, key, len); \
+ \
+    if (value) \
+        return value; \
+ \
+    value = calloc(1, sizeof(Td)); \
+ \
+    if (!value || !map_set(map, key, len, value)) \
+        return NULL; \
+ \
+    return value; \
 } struct map
 
 struct map *map_init(size_t, hfunc_t);

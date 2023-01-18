@@ -11,5 +11,6 @@ static inline void concat(char *dest, const char *a, size_t alen, const char *b,
 }
 
 #define VERSION "@VCS_TAG@"
+#define SYSCONFDIR "@SYSCONFDIR@"
 
 #endif

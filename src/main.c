@@ -22,7 +22,7 @@ int main(int argc, char * const *argv)
                 break;
             case 'v':
                 printf("%s v" VERSION " built on " __TIME__ ", " __DATE__ "\n", argv[0]);
-                return 0;
+                return EX_OK;
             case 'h': default:
                 fprintf(stderr,
                         "Usage: %s [ -v | -h | -c <conf> ]\n"
@@ -36,7 +36,7 @@ int main(int argc, char * const *argv)
     const char *oconfpath = confpath;
 
     const char * const pref[] = {
-        "/etc",
+        SYSCONFDIR,
         getenv("XDG_CONFIG_HOME"),
         getenv("HOME")
     };
@@ -84,14 +84,14 @@ int main(int argc, char * const *argv)
     if ((sb.st_mode & S_IFMT) != S_IFREG)
         errx(EX_NOINPUT, "Invalid path, expected file");
 
-    struct map *confmap = conf_read(conf, confpath);
+    struct conf confmap = conf_read(conf, confpath);
 
     if (confpath != oconfpath)
         free(confpath);
 
     fclose(conf);
 
-    struct nl_cache_mngr *nlmngr = nl_run(confmap);
+    struct nl_cache_mngr *nlmngr = nl_run(&confmap);
 
     conf_free(confmap);
     nl_free(nlmngr);

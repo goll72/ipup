@@ -9,61 +9,115 @@
 #include "map.h"
 #include "hash.h"
 #include "conf.h"
-#include "util.h"
 #include "xalloc.h"
 
-map_decl(conf_t);
+map_decl(servconf_t);
+map_decl(ifconf_t);
 
-static int line_cb(void *user, const char *section, const char *name, const char *value)
-{
-    struct map *map = (struct map *)user;
-    size_t sectionlen = strlen(section);
-    conf_t *conf = map_get(map, section, sectionlen);
+#define BOOL_IS_TRUE(x)                 \
+    (strcasecmp((x), "yes") == 0 ||     \
+     strcasecmp((x), "true") == 0 ||    \
+     strcasecmp((x), "1") == 0)
 
-    if (!conf) {
-        conf = xcalloc(1, sizeof(conf_t));
+#define BOOL_IS_FALSE(x)                \
+    (strcasecmp((x), "no") == 0 ||      \
+     strcasecmp((x), "false") == 0 ||   \
+     strcasecmp((x), "0") == 0)
 
-        conf->ttl = (uint32_t)-1;
-        conf->resolv = ldns_resolver_new();
-
-        if (!map_set(map, section, sectionlen, conf))
-            errx(EX_SOFTWARE, "Failed to allocate memory for hashmap");
+#define BOOL_FLAG(x, var, flag)         \
+    if (BOOL_IS_TRUE((x))) {            \
+        (var) &= (flag);                \
+    } else if (BOOL_IS_FALSE((x))) {    \
+        (var) |= ~(flag);               \
+    } else {                            \
+        return 0;                       \
     }
 
-    #define BOOL_IS_TRUE(x)                 \
-        (strcasecmp((x), "yes") == 0 ||     \
-         strcasecmp((x), "true") == 0 ||    \
-         strcasecmp((x), "1") == 0)
+#define TO_NUM_COND_MSG(out, x, cond, ...)    \
+    char *end;                                \
+    errno = 0;                                \
+    (out) = strtoull((x), &end, 10);          \
+                                              \
+    if ((errno || *end != '\0') || !(cond)) { \
+        warnx(__VA_ARGS__);                   \
+        return 0;                             \
+    }
 
-    #define BOOL_IS_FALSE(x)                \
-        (strcasecmp((x), "no") == 0 ||      \
-         strcasecmp((x), "false") == 0 ||   \
-         strcasecmp((x), "0") == 0)
+// Private, used to check if a server is
+// not referenced by any other interface
+#define CONF_OPT_SERVER_USED_BY_IFACE (1 << 7)
 
-    #define BOOL_FLAG(x, var, flag)         \
-        if (BOOL_IS_TRUE((x))) {            \
-            (var) &= (flag);                \
-        } else if (BOOL_IS_FALSE((x))) {    \
-            (var) |= ~(flag);               \
-        } else {                            \
-            return 0;                       \
+static bool str_to_time_duration(unsigned long long *out, const char *str)
+{
+    unsigned long long duration = 0;
+
+    for (uint32_t mask = 0, prev = 0; ; prev = mask) {
+        if (*str == '\0') {
+            *out = duration;
+            return true;
         }
 
-    if (strcmp(name, "server") == 0) {
-        ldns_rdf *server = ldns_dname_new_frm_str(value);
-        dns_resolver_init_frm_dname(conf->resolv, server);
-        ldns_resolver_set_domain(conf->resolv, server);
+        char *end;
+        errno = 0;
+        unsigned long long base = strtoull(str, &end, 10);
+
+        if (errno || end == str)
+            return false;
+
+        if (*end == 'd')
+            base *= 86400;
+        else if (*end == 'h')
+            base *= 3600;
+        else if (*end == 'm')
+            base *= 60;
+        else if (*end == 's' || *end == ' ' || *end == '\t')
+            ;
+        else
+            return false;
+
+        duration += base;
+        str = end + 1;
+
+        if (*end == ' ' || *end == '\t') {
+            continue;
+        }
+
+        // Compares the specifier bitmask with the previous
+        // one, if a bit that was set got unset a specifier
+        // was repeated, making the sequence invalid
+        uint32_t val = mask ^= (1 << (*end - 'd'));
+        uint8_t bset, bsetprev;
+
+        for (bset = 0; val; bset++)
+            val &= val - 1;
+        for (bsetprev = 0; prev; bsetprev++)
+            prev &= prev - 1;
+
+        if (bset - bsetprev != 1)
+            return false;
+    }
+}
+
+static int handle_servconf(struct map *map, const char *server,
+        const char *name, const char *value)
+{
+    size_t len = strlen(server);
+    servconf_t *conf = map_get_set_servconf_t(map, server, len);
+
+    if (!conf->resolv)
+        conf->resolv = ldns_resolver_new();
+
+    if (strcmp(name, "fqdn") == 0) {
+        ldns_rdf *fqdn = ldns_dname_new_frm_str(value);
+        dns_resolver_init_frm_dname(conf->resolv, fqdn);
+        ldns_resolver_set_domain(conf->resolv, fqdn);
 
         ldns_rdf_deep_free(conf->server);
-        conf->server = server;
+        conf->server = fqdn;
     } else if (strcmp(name, "port") == 0) {
-        errno = 0;
-        unsigned long long port = strtoull(value, NULL, 10);
-
-        if (errno || port == 0 || port > 65535) {
-            warnx("Invalid port number: %s", value);
-            return 0;
-        }
+        unsigned long long port;
+        TO_NUM_COND_MSG(port, value, (port != 0 && port <= 65535),
+                "Invalid port number: %s", value);
 
         ldns_resolver_set_port(conf->resolv, port);
     } else if (strcmp(name, "key-name") == 0) {
@@ -119,121 +173,185 @@ static int line_cb(void *user, const char *section, const char *name, const char
             warnx("Unknown encryption key algorithm: %s", value);
 
         return algomatch;
-    } else if (strcmp(name, "zone") == 0) {
-        ldns_rdf_free(conf->zone);
-        conf->zone = ldns_dname_new_frm_str(value);
-    } else if (strcmp(name, "record") == 0) {
-        ldns_rdf_free(conf->record);
-        conf->record = ldns_dname_new_frm_str(value);
-    } else if (strcmp(name, "delete-existing") == 0) {
-        BOOL_FLAG(value, conf->opts, CONF_OPT_DELETE_EXISTING);
-    } else if (strcmp(name, "ttl") == 0) {
-        char *end;
-        errno = 0;
-
-        unsigned long long ttl = strtoull(value, &end, 10);
-
-        switch (*end) {
-            case 'd':
-                ttl *= 86400;
-                break;
-            case 'h':
-                ttl *= 360;
-                break;
-            case 'm':
-                ttl *= 60;
-                break;
-        }
-
-        // 7d, maximum TTL allowed by DNS
-        if (errno || ttl > 604800) {
-            warnx("Invalid TTL specified");
-            return 0;
-        }
-
-        conf->ttl = ttl;
     } else if (strcmp(name, "max-retry") == 0) {
-        errno = 0;
         unsigned long long retry = strtoull(value, NULL, 10);
-
-        if (errno || retry > 255) {
-            warnx("Invalid value for retry-max: %llu", retry);
-            return 0;
-        }
+        TO_NUM_COND_MSG(retry, value, retry <= 255,
+                "Invalid value for max-retry: %llu", retry)
 
         ldns_resolver_set_retry(conf->resolv, retry);
+    } else if (strcmp(name, "verify-update") == 0) {
+        BOOL_FLAG(value, conf->opts, CONF_OPT_SERVER_VERIFY_UPDATE);
     } else {
         return 0;
     }
 
-    #undef BOOL_FLAG
-    #undef BOOL_IS_FALSE
-    #undef BOOL_IS_TRUE
+    return 1;
+}
+
+static int handle_ifconf(struct conf *conf, const char *iface,
+        const char *name, const char *value)
+{
+    ifconf_t *ifconf = map_get_set_ifconf_t(conf->ifaces, iface, strlen(iface));
+
+    if (strcmp(name, "server") == 0) {
+        servconf_t *sconf = map_get_set_servconf_t(conf->servers, value, strlen(value));
+
+        if (!sconf)
+            sconf->resolv = ldns_resolver_new();
+
+        ifconf->server = sconf;
+    } else if (strcmp(name, "zone") == 0) {
+        ldns_rdf_free(ifconf->zone);
+        ifconf->zone = ldns_dname_new_frm_str(value);
+    } else if (strcmp(name, "record") == 0) {
+        ldns_rdf_free(ifconf->record);
+        ifconf->record = ldns_dname_new_frm_str(value);
+    } else if (strcmp(name, "delete-existing") == 0) {
+        BOOL_FLAG(value, ifconf->opts, CONF_OPT_IFACE_DELETE_EXISTING);
+    } else if (strcmp(name, "ttl") == 0) {
+        unsigned long long ttl;
+
+        // 7d, maximum TTL allowed by DNS
+        if (!str_to_time_duration(&ttl, value) || ttl == 0 || ttl > 604800) {
+            warnx("Invalid TTL specified: %s", value);
+            return 0;
+        }
+
+        ifconf->ttl = ttl;
+    } else if (strcmp(name, "respect-ttl") == 0) {
+        BOOL_FLAG(value, ifconf->opts, CONF_OPT_IFACE_RESPECT_TTL);
+    } else {
+        return 0;
+    }
 
     return 1;
 }
 
-static bool validate(char *key, size_t len, conf_t *conf)
+#undef BOOL_FLAG
+#undef BOOL_IS_FALSE
+#undef BOOL_IS_TRUE
+#undef TO_NUM_COND_MSG
+
+static int line_cb(void *user, const char *section, const char *name, const char *value)
 {
-    if (!conf->zone)
-        errx(EX_DATAERR, "No zone specified for section [%s]", key);
+    struct conf *conf = (struct conf *)user;
 
-    if (!conf->record)
-        errx(EX_DATAERR, "No record specified for section [%s]", key);
+    const char *sep = strchr(section, '/');
 
-    if (!ldns_dname_is_subdomain(conf->record, conf->zone))
-        ldns_dname_cat(conf->record, conf->zone);
+    if (!sep) {
+        warnx("Unknown section: [%s]", section);
+        return 0;
+    }
 
-    if (conf->opts & CONF_OPT_RESPECT_TTL && conf->ttl != (uint32_t)-1)
+    if (strncmp(section, "server", sep - section) == 0) {
+        return handle_servconf(conf->servers, sep + 1, name, value);
+    } else if (strncmp(section, "iface", sep - section) == 0) {
+        return handle_ifconf(conf, sep + 1, name, value);
+    }
+
+    return 0;
+}
+
+static bool validate_ifconf(char *key, size_t len, ifconf_t *ifconf)
+{
+    servconf_t *servconf = ifconf->server;
+
+    if (!servconf || !servconf->resolv)
+        errx(EX_DATAERR, "Invalid server specified for interface %s", key);
+
+    if (!ifconf->zone || !ifconf->record) {
+        if (!servconf->zone || !servconf->record)
+            errx(EX_DATAERR, "No zone/record specified for interface %s or its server", key);
+
+        ldns_rdf_deep_free(ifconf->zone);
+        ldns_rdf_deep_free(ifconf->zone);
+
+        ifconf->zone = servconf->zone;
+        ifconf->record = servconf->record;
+    }
+
+    if (!ldns_dname_is_subdomain(ifconf->record, ifconf->zone))
+        ldns_dname_cat(ifconf->record, ifconf->zone);
+
+    if (ifconf->opts & CONF_OPT_IFACE_RESPECT_TTL && ifconf->ttl != 0)
         errx(EX_DATAERR, "The options respect-ttl and ttl cannot be specified simultaneously");
 
-    ldns_status ret = dns_tsig_credentials_validate(conf->cred);
-
-    if (ret == LDNS_STATUS_INVALID_B64)
-        errx(EX_DATAERR, "Invalid key secret for section [%s]", key);
-    else if (ret == LDNS_STATUS_CRYPTO_TSIG_BOGUS)
-        errx(EX_DATAERR, "Expected all or none of the key name, key secret "
-                "and algorithm to be specified for section [%s]", key);
-    else if (ret == LDNS_STATUS_OK)
-        dns_resolver_set_tsig_credentials(conf->resolv, conf->cred);
+    servconf->opts |= CONF_OPT_SERVER_USED_BY_IFACE;
 
     return true;
 }
 
-struct map *conf_read(FILE *conf, const char *filename)
+static bool validate_servconf(char *key, size_t len, servconf_t *servconf)
 {
-    struct map *map = map_init(4, murmurhash64a);
+    ldns_status ret = dns_tsig_credentials_validate(servconf->cred);
 
-    int ret = ini_parse_file(conf, line_cb, map);
+    if (ret == LDNS_STATUS_INVALID_B64)
+        errx(EX_DATAERR, "Invalid key secret for server %s", key);
+    else if (ret == LDNS_STATUS_CRYPTO_TSIG_BOGUS)
+        errx(EX_DATAERR, "Expected all or none of the key name, key secret "
+                "and algorithm to be specified for server %s", key);
+    else if (ret == LDNS_STATUS_OK)
+        dns_resolver_set_tsig_credentials(servconf->resolv, servconf->cred);
+
+    if (!(servconf->opts & CONF_OPT_SERVER_USED_BY_IFACE))
+        warnx("Server %s is not referenced by any interfaces", key);
+
+    return true;
+}
+
+struct conf conf_read(FILE *file, const char *filename)
+{
+    struct conf conf;
+
+    conf.ifaces = map_init(4, murmurhash64a);
+    conf.servers = map_init(4, murmurhash64a);
+
+    int ret = ini_parse_file(file, line_cb, &conf);
 
     if (ret < 0)
         errx(EX_NOINPUT, "Could not load config file");
     else if (ret)
-        errx(EX_DATAERR, "Error on config file @ %s:%d", filename, ret);
+        errx(EX_DATAERR, "Error in config file @ %s:%d", filename, ret);
 
-    map_foreach_conf_t(map, validate);
+    map_foreach_ifconf_t(conf.ifaces, validate_ifconf);
+    map_foreach_servconf_t(conf.servers, validate_servconf);
 
-    return map;
+    return conf;
 }
 
-static bool free_section(char *key, size_t len, conf_t *conf)
+static bool free_ifconf(char *key, size_t len, ifconf_t *ifconf)
 {
-    ldns_rdf_deep_free(conf->zone);
-    ldns_rdf_deep_free(conf->record);
+    servconf_t *servconf = ifconf->server;
 
-    free((void *)conf->cred.algorithm);
-    free((void *)conf->cred.keyname);
-    free((void *)conf->cred.keydata);
+    if (ifconf->zone != servconf->zone || ifconf->record != servconf->record) {
+        ldns_rdf_deep_free(ifconf->zone);
+        ldns_rdf_deep_free(ifconf->record);
+    }
 
-    ldns_resolver_deep_free(conf->resolv);
-
-    free(conf);
-
+    free(ifconf);
     return true;
 }
 
-void conf_free(struct map *map)
+static bool free_servconf(char *key, size_t len, servconf_t *servconf)
 {
-    map_foreach_conf_t(map, free_section);
-    map_free(map);
+    ldns_rdf_deep_free(servconf->zone);
+    ldns_rdf_deep_free(servconf->record);
+
+    ldns_resolver_deep_free(servconf->resolv);
+
+    free((void *)servconf->cred.algorithm);
+    free((void *)servconf->cred.keyname);
+    free((void *)servconf->cred.keydata);
+
+    free(servconf);
+    return true;
+}
+
+void conf_free(struct conf conf)
+{
+    map_foreach_ifconf_t(conf.ifaces, free_ifconf);
+    map_free(conf.ifaces);
+
+    map_foreach_servconf_t(conf.servers, free_servconf);
+    map_free(conf.servers);
 }
