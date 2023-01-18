@@ -3,6 +3,9 @@ project('ipup', 'c', version : '0.1', default_options : [
     'c_std=c11',
 ])
 
+prefix = get_option('prefix')
+sysconfdir = prefix / get_option('sysconfdir')
+
 add_project_arguments('-D_XOPEN_SOURCE=700', language : ['c'])
 
 ldns = dependency('ldns', version : '>=1.7.1')
@@ -16,7 +19,7 @@ subdir('src')
 subdir('include')
 subdir('tests')
 
-executable('ipup', [ipup_src, ver],
+executable('ipup', [ipup_src, util],
     dependencies : [ldns, inih, nl],
     include_directories : 'include',
     install : true)
