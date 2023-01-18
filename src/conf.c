@@ -152,7 +152,7 @@ static int line_cb(void *user, const char *section, const char *name, const char
         }
 
         conf->ttl = ttl;
-    } else if (strcmp(name, "retry-max") == 0) {
+    } else if (strcmp(name, "max-retry") == 0) {
         errno = 0;
         unsigned long long retry = strtoull(value, NULL, 10);
 
