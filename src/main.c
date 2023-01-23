@@ -1,10 +1,11 @@
+#include <libgen.h>
 #include <unistd.h>
 #include <stdbool.h>
-#include <sysexits.h>
 
 #include <sys/stat.h>
 
 #include "nl.h"
+#include "log.h"
 #include "dns.h"
 #include "util.h"
 #include "conf.h"
@@ -14,8 +15,11 @@ int main(int argc, char * const *argv)
 {
     int opt;
     char *confpath = NULL;
+    enum log_mode logmode = LOG_MODE_DEFAULT;
 
-    while ((opt = getopt(argc, argv, "c:vh")) != -1) {
+    const char *progname = basename(argv[0]);
+
+    while ((opt = getopt(argc, argv, "c:vsSh")) != -1) {
         switch (opt) {
             case 'c':
                 confpath = optarg;
@@ -23,15 +27,25 @@ int main(int argc, char * const *argv)
             case 'v':
                 printf("%s v" VERSION " built on " __TIME__ ", " __DATE__ "\n", argv[0]);
                 return EX_OK;
+            case 's':
+                logmode = LOG_MODE_STDOUT;
+                break;
+            case 'S':
+                logmode = LOG_MODE_SYSLOG;
+                break;
             case 'h': default:
                 fprintf(stderr,
                         "Usage: %s [ -v | -h | -c <conf> ]\n"
                         "  -h    Shows this help menu\n"
                         "  -v    Version information\n"
-                        "  -c    Specify configuration file path\n", argv[0]);
+                        "  -s    Log to stdout\n"
+                        "  -S    Log to syslog\n"
+                        "  -c    Specify configuration file path\n", progname);
                 return opt == 'h' ? EX_OK : EX_USAGE;
         }
     }
+
+    log_init(progname, logmode);
 
     const char *oconfpath = confpath;
 
@@ -70,19 +84,19 @@ int main(int argc, char * const *argv)
     }
 
     if (!foundconf)
-        errx(EX_NOINPUT, "Could not find a config file");
+        die(EX_NOINPUT, "Could not find a config file");
 
     FILE *conf = fopen(confpath, "r");
 
     if (!conf)
-        errx(EX_NOINPUT, "Config file specified not found");
+        die(EX_NOINPUT, "Config file specified not found");
 
     // Check that it really is a file
     struct stat sb;
     fstat(fileno(conf), &sb);
 
     if ((sb.st_mode & S_IFMT) != S_IFREG)
-        errx(EX_NOINPUT, "Invalid path, expected file");
+        die(EX_NOINPUT, "Invalid path, expected file");
 
     struct conf confmap = conf_read(conf, confpath);
 
@@ -93,6 +107,7 @@ int main(int argc, char * const *argv)
 
     struct nl_cache_mngr *nlmngr = nl_run(&confmap);
 
+    log_close();
     conf_free(confmap);
     nl_free(nlmngr);
     dns_free_sys_resolver();

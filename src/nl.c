@@ -1,7 +1,4 @@
-#include <err.h>
 #include <signal.h>
-#include <sysexits.h>
-
 #include <net/if.h>
 #include <arpa/inet.h>
 
@@ -9,6 +6,7 @@
 #include <netlink/netlink.h>
 #include <netlink/route/addr.h>
 
+#include "log.h"
 #include "dns.h"
 #include "map.h"
 #include "conf.h"
@@ -75,18 +73,18 @@ struct nl_cache_mngr *nl_run(struct conf *confmap) {
     ret = nl_cache_mngr_alloc(NULL, NETLINK_ROUTE, NL_AUTO_PROVIDE, &nlmngr);
 
     if (ret < 0)
-        errx(EX_SOFTWARE, "Failed to set up Netlink cache manager: %s", nl_geterror(ret));
+        die(EX_SOFTWARE, "Failed to set up Netlink cache manager: %s", nl_geterror(ret));
 
     struct nl_cache *cache;
     ret = rtnl_addr_alloc_cache(NULL, &cache);
 
     if (ret < 0)
-        errx(EX_SOFTWARE, "Failed to allocate Netlink address cache: %s", nl_geterror(ret));
+        die(EX_SOFTWARE, "Failed to allocate Netlink address cache: %s", nl_geterror(ret));
 
     ret = nl_cache_mngr_add_cache(nlmngr, cache, cache_change_cb, confmap);
 
     if (ret < 0)
-        errx(2, "Failed to add cache to Netlink cache manager: %s", nl_geterror(ret));
+        die(EX_SOFTWARE, "Failed to add cache to Netlink cache manager: %s", nl_geterror(ret));
 
     // Runs until an error occurs or the user requests termination
     while (1) {
@@ -96,7 +94,7 @@ struct nl_cache_mngr *nl_run(struct conf *confmap) {
             break;
 
         if (ret < 0)
-            errx(EX_OSERR, "Failed to poll on Netlink channel: %s", nl_geterror(ret));
+            die(EX_OSERR, "Failed to poll on Netlink channel: %s", nl_geterror(ret));
     }
 
     return nlmngr;

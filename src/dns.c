@@ -1,7 +1,7 @@
-#include <err.h>
 #include <ctype.h>
 #include <sysexits.h>
 
+#include "log.h"
 #include "dns.h"
 
 static ldns_resolver *sysresolv = NULL;
@@ -15,7 +15,7 @@ ldns_resolver *dns_sys_resolver(void)
     ldns_status ret = ldns_resolver_new_frm_file(&sysresolv, NULL);
 
     if (ret != LDNS_STATUS_OK)
-        errx(EX_OSFILE, "Failed to create stub resolver from /etc/resolv.conf: %s",
+        die(EX_OSFILE, "Failed to create stub resolver from /etc/resolv.conf: %s",
                 ldns_get_errorstr_by_id(ret));
 
     return sysresolv;
@@ -50,12 +50,12 @@ ldns_resolver *dns_resolver_init_frm_dname(ldns_resolver *resolv, ldns_rdf *serv
             LDNS_RR_TYPE_A, LDNS_RR_CLASS_IN, LDNS_RD);
 
     if (ret_aaaa != LDNS_STATUS_OK && ret_a != LDNS_STATUS_OK) {
-        warnx("Failed to query DNS server");
+        log(LOG_WARNING, "Failed to query DNS server");
         goto fail;
     }
 
     if (ldns_pkt_ancount(anspkt_a) == 0 && ldns_pkt_ancount(anspkt_aaaa) == 0) {
-        warnx("Got no answer from DNS server");
+        log(LOG_WARNING, "Got no answer from DNS server");
         goto fail;
     }
 
@@ -63,7 +63,7 @@ ldns_resolver *dns_resolver_init_frm_dname(ldns_resolver *resolv, ldns_rdf *serv
     ret_a = ldns_resolver_push_nameserver_rr_list(resolv, ldns_pkt_answer(anspkt_a));
 
     if (ret_aaaa != LDNS_STATUS_OK && ret_a != LDNS_STATUS_OK) {
-        warnx("Failed to store nameservers from query answer");
+        log(LOG_WARNING, "Failed to store nameservers from query answer");
         goto fail;
     }
 
@@ -134,12 +134,12 @@ void dns_do_update(ldns_resolver *resolv, ldns_rdf *zone, ldns_rdf *record,
         ldns_rr_set_type(updrr, LDNS_RR_TYPE_AAAA);
 
     if (!ldns_rr_push_rdf(updrr, rd))
-        errx(EX_SOFTWARE, "Failed to allocate memory");
+        die(EX_SOFTWARE, "Failed to allocate memory");
 
     ldns_rr_list *updrrlist = ldns_rr_list_new();
 
     if (!ldns_rr_list_push_rr(updrrlist, updrr))
-        errx(EX_SOFTWARE, "Failed to allocate memory");
+        die(EX_SOFTWARE, "Failed to allocate memory");
 
     ldns_pkt *updanspkt = NULL;
     ldns_pkt *updpkt = ldns_update_pkt_new(ldns_rdf_clone(zone), LDNS_RR_CLASS_IN, NULL, updrrlist, NULL);
@@ -147,14 +147,14 @@ void dns_do_update(ldns_resolver *resolv, ldns_rdf *zone, ldns_rdf *record,
     ret = ldns_update_pkt_tsig_add(updpkt, resolv);
 
     if (ret != LDNS_STATUS_OK) {
-        warnx("Failed to sign packet with TSIG key: %s", ldns_get_errorstr_by_id(ret));
+        log(LOG_WARNING, "Failed to sign packet with TSIG key: %s", ldns_get_errorstr_by_id(ret));
         goto fail;
     }
 
     ret = ldns_resolver_send_pkt(&updanspkt, resolv, updpkt);
 
     if (ret != LDNS_STATUS_OK) {
-        warnx("Failed to send query to DNS server: %s", ldns_get_errorstr_by_id(ret));
+        log(LOG_WARNING, "Failed to send query to DNS server: %s", ldns_get_errorstr_by_id(ret));
         goto fail;
     }
 

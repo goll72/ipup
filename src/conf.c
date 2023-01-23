@@ -3,8 +3,8 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <strings.h>
-#include <sysexits.h>
 
+#include "log.h"
 #include "dns.h"
 #include "map.h"
 #include "hash.h"
@@ -39,7 +39,7 @@ map_decl(ifconf_t);
     (out) = strtoull((x), &end, 10);          \
                                               \
     if ((errno || *end != '\0') || !(cond)) { \
-        warnx(__VA_ARGS__);                   \
+        log(LOG_NOTICE, __VA_ARGS__);         \
         return 0;                             \
     }
 
@@ -132,7 +132,7 @@ static int handle_servconf(struct map *map, const char *server,
         FILE *keyfile = fopen(value, "r");
 
         if (!keyfile) {
-            warn("Could not read key file %s", value);
+            log(LOG_WARNING, "Could not read key file %s", value);
             return 0;
         }
 
@@ -170,7 +170,7 @@ static int handle_servconf(struct map *map, const char *server,
         }
 
         if (!algomatch)
-            warnx("Unknown encryption key algorithm: %s", value);
+            log(LOG_WARNING, "Unknown encryption key algorithm: %s", value);
 
         return algomatch;
     } else if (strcmp(name, "max-retry") == 0) {
@@ -213,7 +213,7 @@ static int handle_ifconf(struct conf *conf, const char *iface,
 
         // 7d, maximum TTL allowed by DNS
         if (!str_to_time_duration(&ttl, value) || ttl == 0 || ttl > 604800) {
-            warnx("Invalid TTL specified: %s", value);
+            log(LOG_NOTICE, "Invalid TTL specified: %s", value);
             return 0;
         }
 
@@ -239,7 +239,7 @@ static int line_cb(void *user, const char *section, const char *name, const char
     const char *sep = strchr(section, '/');
 
     if (!sep) {
-        warnx("Unknown section: [%s]", section);
+        log(LOG_NOTICE, "Unknown section: [%s]", section);
         return 0;
     }
 
@@ -257,11 +257,11 @@ static bool validate_ifconf(char *key, size_t len, ifconf_t *ifconf)
     servconf_t *servconf = ifconf->server;
 
     if (!servconf || !servconf->resolv)
-        errx(EX_DATAERR, "Invalid server specified for interface %s", key);
+        die(EX_DATAERR, "Invalid server specified for interface %s", key);
 
     if (!ifconf->zone || !ifconf->record) {
         if (!servconf->zone || !servconf->record)
-            errx(EX_DATAERR, "No zone/record specified for interface %s or its server", key);
+            die(EX_DATAERR, "No zone/record specified for interface %s or its server", key);
 
         ldns_rdf_deep_free(ifconf->zone);
         ldns_rdf_deep_free(ifconf->zone);
@@ -274,7 +274,7 @@ static bool validate_ifconf(char *key, size_t len, ifconf_t *ifconf)
         ldns_dname_cat(ifconf->record, ifconf->zone);
 
     if (ifconf->opts & CONF_OPT_IFACE_RESPECT_TTL && ifconf->ttl != 0)
-        errx(EX_DATAERR, "The options respect-ttl and ttl cannot be specified simultaneously");
+        die(EX_DATAERR, "The options respect-ttl and ttl cannot be specified simultaneously");
 
     servconf->opts |= CONF_OPT_SERVER_USED_BY_IFACE;
 
@@ -286,15 +286,15 @@ static bool validate_servconf(char *key, size_t len, servconf_t *servconf)
     ldns_status ret = dns_tsig_credentials_validate(servconf->cred);
 
     if (ret == LDNS_STATUS_INVALID_B64)
-        errx(EX_DATAERR, "Invalid key secret for server %s", key);
+        die(EX_DATAERR, "Invalid key secret for server %s", key);
     else if (ret == LDNS_STATUS_CRYPTO_TSIG_BOGUS)
-        errx(EX_DATAERR, "Expected all or none of the key name, key secret "
+        die(EX_DATAERR, "Expected all or none of the key name, key secret "
                 "and algorithm to be specified for server %s", key);
     else if (ret == LDNS_STATUS_OK)
         dns_resolver_set_tsig_credentials(servconf->resolv, servconf->cred);
 
     if (!(servconf->opts & CONF_OPT_SERVER_USED_BY_IFACE))
-        warnx("Server %s is not referenced by any interfaces", key);
+        log(LOG_NOTICE, "Server %s is not referenced by any interfaces", key);
 
     return true;
 }
@@ -309,9 +309,9 @@ struct conf conf_read(FILE *file, const char *filename)
     int ret = ini_parse_file(file, line_cb, &conf);
 
     if (ret < 0)
-        errx(EX_NOINPUT, "Could not load config file");
+        die(EX_NOINPUT, "Could not load config file");
     else if (ret)
-        errx(EX_DATAERR, "Error in config file @ %s:%d", filename, ret);
+        die(EX_DATAERR, "Error in config file @ %s:%d", filename, ret);
 
     map_foreach_ifconf_t(conf.ifaces, validate_ifconf);
     map_foreach_servconf_t(conf.servers, validate_servconf);

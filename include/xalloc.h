@@ -1,19 +1,20 @@
 #ifndef XALLOC_H
 #define XALLOC_H
 
-#include <err.h>
 #include <stdint.h>
 #include <stdlib.h>
 
-#define XALLOC(func, paramdecl, params)             \
-    void *x##func(paramdecl)                        \
-    {                                               \
-        void *ret = func(params);                   \
-                                                    \
-        if (!ret)                                   \
-            errx(2, "Failed to allocate memory");   \
-                                                    \
-        return ret;                                 \
+#include "log.h"
+
+#define XALLOC(func, paramdecl, params)                     \
+    void *x##func(paramdecl)                                \
+    {                                                       \
+        void *ret = func(params);                           \
+                                                            \
+        if (!ret)                                           \
+            die(EX_SOFTWARE, "Failed to allocate memory");  \
+                                                            \
+        return ret;                                         \
     } struct ok
 
 
