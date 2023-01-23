@@ -26,9 +26,9 @@ map_decl(ifconf_t);
 
 #define BOOL_FLAG(x, var, flag)         \
     if (BOOL_IS_TRUE((x))) {            \
-        (var) &= (flag);                \
+        (var) |= (flag);                \
     } else if (BOOL_IS_FALSE((x))) {    \
-        (var) |= ~(flag);               \
+        (var) &= ~(flag);               \
     } else {                            \
         return 0;                       \
     }
@@ -321,6 +321,7 @@ struct conf conf_read(FILE *file, const char *filename)
 
 static bool free_ifconf(char *key, size_t len, ifconf_t *ifconf)
 {
+    (void)key, (void)len;
     servconf_t *servconf = ifconf->server;
 
     if (ifconf->zone != servconf->zone || ifconf->record != servconf->record) {
@@ -334,6 +335,7 @@ static bool free_ifconf(char *key, size_t len, ifconf_t *ifconf)
 
 static bool free_servconf(char *key, size_t len, servconf_t *servconf)
 {
+    (void)key, (void)len;
     ldns_rdf_deep_free(servconf->zone);
     ldns_rdf_deep_free(servconf->record);
 
