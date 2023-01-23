@@ -12,6 +12,6 @@ ldns_status dns_tsig_credentials_validate(ldns_tsig_credentials cred);
 void dns_resolver_set_tsig_credentials(ldns_resolver *resolv, ldns_tsig_credentials cred);
 
 void dns_do_update(ldns_resolver *resolv, ldns_rdf *zone, ldns_rdf *record,
-        int af, const void *addr, bool delete, uint32_t ttl);
+        const struct sockaddr *addr, bool delete, bool verify, uint32_t ttl);
 
 #endif /* DNS_H */

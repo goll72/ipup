@@ -26,18 +26,6 @@ void dns_free_sys_resolver(void)
     ldns_resolver_deep_free(sysresolv);
 }
 
-static ldns_rdf *dns_rdf_frm_addr(int af, const void *addr)
-{
-    ldns_rdf *rd = NULL;
-
-    if (af == AF_INET)
-        rd = ldns_rdf_new_frm_data(LDNS_RDF_TYPE_A, LDNS_IP4ADDRLEN, addr);
-    else if (af == AF_INET6)
-        rd = ldns_rdf_new_frm_data(LDNS_RDF_TYPE_AAAA, LDNS_IP6ADDRLEN, addr);
-
-    return rd;
-}
-
 // TODO: More informative error messages
 ldns_resolver *dns_resolver_init_frm_dname(ldns_resolver *resolv, ldns_rdf *server)
 {
@@ -111,26 +99,67 @@ void dns_resolver_set_tsig_credentials(ldns_resolver *resolv, ldns_tsig_credenti
     ldns_resolver_set_tsig_keydata(resolv, cred.keydata);
 }
 
+// An UPDATE request could still fail even if the DNS server doesn't send
+// an error response, such as with misconfigured DNS zone permissions
+static void dns_verify_update(ldns_resolver *resolv, ldns_rdf *record,
+        ldns_rdf *rdaddr, bool delete)
+{
+    ldns_pkt *anspkt;
+    ldns_status ret = ldns_resolver_query_status(&anspkt, resolv,
+            record, LDNS_RR_TYPE_AAAA, LDNS_RR_CLASS_IN, 0);
+
+    if (ret != LDNS_STATUS_OK) {
+        log(LOG_NOTICE, "Failed to query DNS server for verifying update: %s",
+        ldns_get_errorstr_by_id(ret));
+
+        goto fail;
+    }
+
+    ldns_rr_list *ans = ldns_pkt_answer(anspkt);
+    bool match = false;
+
+    for (size_t i = 0; i < ldns_rr_list_rr_count(ans); i++) {
+        ldns_rr *rr = ldns_rr_list_rr(ans, i);
+        // Despite the name, ldns_rr_a_address works wth AAAA records too
+        ldns_rdf *tmp = ldns_rr_a_address(rr);
+
+        if (ldns_rdf_compare(rdaddr, tmp) == 0) {
+            match = true;
+            break;
+        }
+    }
+
+    // We shouldn't find an address that was deleted, vice versa
+    if (match == delete) {
+        log(LOG_WARNING, "Address should have been %s but was %s in DNS record(s)",
+                delete ? "deleted" : "updated", delete ? "found" : "not found");
+    } else {
+        log(LOG_INFO, "Address was %s successfully", delete ? "deleted" : "updated");
+    }
+
+fail:
+   ldns_pkt_free(anspkt);
+}
+
 void dns_do_update(ldns_resolver *resolv, ldns_rdf *zone, ldns_rdf *record,
-        int af, const void *addr, bool delete, uint32_t ttl)
+        const struct sockaddr *addr, bool delete, bool verify, uint32_t ttl)
 {
     ldns_status ret;
-    ldns_rdf *rd = dns_rdf_frm_addr(af, addr);
+    ldns_rdf *rd = ldns_sockaddr_storage2rdf((struct sockaddr_storage *)addr, NULL);
     ldns_rr *updrr = ldns_rr_new();
 
     // TTL = 0 means to delete the record
     if (delete)
         ldns_rr_set_ttl(updrr, 0);
-    // -1 is a sentinel for the default TTL
-    else if (ttl != (uint32_t)-1)
+    else if (ttl != 0)
         ldns_rr_set_ttl(updrr, ttl);
 
     ldns_rr_set_owner(updrr, ldns_rdf_clone(record));
     ldns_rr_set_class(updrr, delete ? LDNS_RR_CLASS_NONE : LDNS_RR_CLASS_IN);
 
-    if (af == AF_INET)
+    if (addr->sa_family == AF_INET)
         ldns_rr_set_type(updrr, LDNS_RR_TYPE_A);
-    else if (af == AF_INET6)
+    else if (addr->sa_family == AF_INET6)
         ldns_rr_set_type(updrr, LDNS_RR_TYPE_AAAA);
 
     if (!ldns_rr_push_rdf(updrr, rd))
@@ -158,7 +187,10 @@ void dns_do_update(ldns_resolver *resolv, ldns_rdf *zone, ldns_rdf *record,
         goto fail;
     }
 
-fail:;
+    if (verify)
+        dns_verify_update(resolv, record, rd, delete);
+
+fail:
     ldns_pkt_free(updanspkt);
     ldns_pkt_free(updpkt);
     ldns_rr_list_deep_free(updrrlist);

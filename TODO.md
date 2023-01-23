@@ -1,4 +1,5 @@
 # TODO
 
  - [ ] Add tests
- - [ ] Implement `verify-update`
+ - [x] Implement `verify-update`
+ - [ ] Synchronize address table state with DNS server(s) on startup
