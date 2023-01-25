@@ -17,9 +17,10 @@ nl = [
 
 subdir('src')
 subdir('include')
-subdir('tests')
 
-executable('ipup', [ipup_src, util],
+ipup = executable('ipup', [ipup_src, ipup_main, util],
     dependencies : [ldns, inih, nl],
-    include_directories : 'include',
+    include_directories : inc,
     install : true)
+
+subdir('tests')

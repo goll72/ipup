@@ -68,7 +68,7 @@ ldns_status dns_tsig_credentials_validate(ldns_tsig_credentials cred)
         size_t b64enclen = strlen(cred.keydata);
         size_t b64pad = 0;
 
-        if (b64enclen < 4)
+        if (b64enclen % 4 != 0)
             return LDNS_STATUS_INVALID_B64;
 
         if (cred.keydata[b64enclen - b64pad - 1] == '=')

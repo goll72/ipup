@@ -4,3 +4,5 @@ util = configure_file(configuration : {
     }, input : 'util.h.in', output : 'util.h.in')
 
 util = vcs_tag(input : util, output : 'util.h')
+
+inc = include_directories('.')

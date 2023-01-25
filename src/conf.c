@@ -50,6 +50,7 @@ map_decl(ifconf_t);
 static bool str_to_time_duration(unsigned long long *out, const char *str)
 {
     unsigned long long duration = 0;
+    const char *orig = str;
 
     for (uint32_t mask = 0, prev = 0; ; prev = mask) {
         if (*str == '\0') {
@@ -61,7 +62,7 @@ static bool str_to_time_duration(unsigned long long *out, const char *str)
         errno = 0;
         unsigned long long base = strtoull(str, &end, 10);
 
-        if (errno || end == str)
+        if (errno || end == orig)
             return false;
 
         if (*end == 'd')
