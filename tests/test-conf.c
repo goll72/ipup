@@ -23,20 +23,3 @@ Test(conf, str_to_time_duration_bails_on_invalid_inputs) {
     expect(not(str_to_time_duration(&out, "1sss")));
     expect(not(str_to_time_duration(&out, "3g,")));
 }
-
-Test(conf, servconf_valid_is_valid) {
-    struct map *map = map_init(4, murmurhash64a);
-
-    assert(map);
-
-    expect(handle_servconf(map, "server", "port", "1234"));
-    expect(handle_servconf(map, "server", "key-algo", "hmac-sha1"));
-    expect(handle_servconf(map, "server", "key-algo", "HMAC-SHA224"));
-    expect(handle_servconf(map, "server", "max-retry", "0"));
-    expect(handle_servconf(map, "server", "verify-update", "true"));
-
-    servconf_t *servconf = map_get(map, "server", sizeof("server") - 1);
-
-    assert(servconf);
-    free_servconf("server", sizeof("server") - 1, servconf);
-}

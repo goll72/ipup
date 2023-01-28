@@ -13,7 +13,7 @@ exe_args = {
     'link_args' : '-Wl,-zmuldefs'
 }
 
-foreach basename : ['conf', 'dns']
+foreach basename : ['conf', 'dns', 'map']
     test(basename,
         executable(basename,
             f'test-@basename@.c',
