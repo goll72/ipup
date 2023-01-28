@@ -25,7 +25,7 @@ void log_mask(uint8_t prio);
 void slog(int prio, const char *fmt, ...);
 
 #define log(prio, ...) \
-	slog(prio, "[" S_##prio "] " __VA_ARGS__)
+    slog(prio, "[" S_##prio "] " __VA_ARGS__)
 
 #define die(code, ...)  \
 	do {                \

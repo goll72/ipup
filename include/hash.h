@@ -1,8 +1,10 @@
 #include <string.h>
 #include <stdint.h>
 
-static uint64_t murmurhash64a(const char *key, size_t len)
+static uint64_t murmurhash64a(const char *key)
 {
+    size_t len = strlen(key);
+
     const uint64_t m = 0xc6a4a7935bd1e995LLU;
     const int r = 47;
 
