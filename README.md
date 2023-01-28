@@ -56,8 +56,6 @@ key-file = /etc/ipup/key
 key-algo = HMAC-SHA512
 
 max-retry = 10
-# default: no
-verify-update = yes
 
 [iface/wlan0]
 server = example
@@ -92,8 +90,6 @@ respect-ttl = yes
     `ldns-keygen -a list`.
  - `max-retry` sets the maximum number of times ipup will retry to send
     a request to the server before giving up.
- - `verify-update` will verify that an update succeeded by querying the DNS server
-    again after the update.
 
 ### For the interface
 

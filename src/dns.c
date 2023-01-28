@@ -26,7 +26,34 @@ void dns_free_sys_resolver(void)
     ldns_resolver_deep_free(sysresolv);
 }
 
-// TODO: More informative error messages
+const char *dns_get_errorstr_by_rcode(ldns_pkt_rcode rcode)
+{
+    switch (rcode) {
+        case LDNS_RCODE_NOERROR:
+            return "Update successful";
+        case LDNS_RCODE_FORMERR:
+            return "Format error";
+        case LDNS_RCODE_SERVFAIL:
+            return "Internal server error";
+        case LDNS_RCODE_NXDOMAIN:
+            return "Domain does not exist";
+        case LDNS_RCODE_NOTIMPL:
+            return "DNS UPDATE not implemented by server";
+        case LDNS_RCODE_REFUSED:
+            return "Server refused request, check its security policy";
+        case LDNS_RCODE_YXDOMAIN:
+            return "Domain exists";
+        case LDNS_RCODE_YXRRSET:
+            return "RRset exists";
+        case LDNS_RCODE_NXRRSET:
+            return "RRset does not exist";
+        case LDNS_RCODE_NOTAUTH:
+            return "Server is not authoritative for zone";
+        case LDNS_RCODE_NOTZONE:
+            return "Record to be updated not in specified zone";
+    }
+}
+
 ldns_resolver *dns_resolver_init_frm_dname(ldns_resolver *resolv, ldns_rdf *server)
 {
     ldns_pkt *anspkt_aaaa = NULL, *anspkt_a = NULL;
@@ -99,52 +126,9 @@ void dns_resolver_set_tsig_credentials(ldns_resolver *resolv, ldns_tsig_credenti
     ldns_resolver_set_tsig_keydata(resolv, cred.keydata);
 }
 
-// An UPDATE request could still fail even if the DNS server doesn't send
-// an error response, such as with misconfigured DNS zone permissions
-static void dns_verify_update(ldns_resolver *resolv, ldns_rdf *record,
-        ldns_rdf *rdaddr, bool delete)
+static ldns_rr *dns_prepare_update_rr(ldns_rdf *record,
+        const struct sockaddr *addr, bool delete, uint32_t ttl)
 {
-    ldns_pkt *anspkt;
-    ldns_status ret = ldns_resolver_query_status(&anspkt, resolv,
-            record, LDNS_RR_TYPE_AAAA, LDNS_RR_CLASS_IN, 0);
-
-    if (ret != LDNS_STATUS_OK) {
-        log(LOG_NOTICE, "Failed to query DNS server for verifying update: %s",
-        ldns_get_errorstr_by_id(ret));
-
-        goto fail;
-    }
-
-    ldns_rr_list *ans = ldns_pkt_answer(anspkt);
-    bool match = false;
-
-    for (size_t i = 0; i < ldns_rr_list_rr_count(ans); i++) {
-        ldns_rr *rr = ldns_rr_list_rr(ans, i);
-        // Despite the name, ldns_rr_a_address works wth AAAA records too
-        ldns_rdf *tmp = ldns_rr_a_address(rr);
-
-        if (ldns_rdf_compare(rdaddr, tmp) == 0) {
-            match = true;
-            break;
-        }
-    }
-
-    // We shouldn't find an address that was deleted, vice versa
-    if (match == delete) {
-        log(LOG_WARNING, "Address should have been %s but was %s in DNS record(s)",
-                delete ? "deleted" : "updated", delete ? "found" : "not found");
-    } else {
-        log(LOG_INFO, "Address was %s successfully", delete ? "deleted" : "updated");
-    }
-
-fail:
-   ldns_pkt_free(anspkt);
-}
-
-void dns_do_update(ldns_resolver *resolv, ldns_rdf *zone, ldns_rdf *record,
-        const struct sockaddr *addr, bool delete, bool verify, uint32_t ttl)
-{
-    ldns_status ret;
     ldns_rdf *rd = ldns_sockaddr_storage2rdf((struct sockaddr_storage *)addr, NULL);
     ldns_rr *updrr = ldns_rr_new();
 
@@ -165,10 +149,12 @@ void dns_do_update(ldns_resolver *resolv, ldns_rdf *zone, ldns_rdf *record,
     if (!ldns_rr_push_rdf(updrr, rd))
         die(EX_SOFTWARE, "Failed to allocate memory");
 
-    ldns_rr_list *updrrlist = ldns_rr_list_new();
+    return updrr;
+}
 
-    if (!ldns_rr_list_push_rr(updrrlist, updrr))
-        die(EX_SOFTWARE, "Failed to allocate memory");
+void dns_send_update(ldns_rdf *zone, ldns_rr_list *updrrlist, ldns_resolver *resolv)
+{
+    ldns_status ret;
 
     ldns_pkt *updanspkt = NULL;
     ldns_pkt *updpkt = ldns_update_pkt_new(ldns_rdf_clone(zone), LDNS_RR_CLASS_IN, NULL, updrrlist, NULL);
@@ -182,16 +168,29 @@ void dns_do_update(ldns_resolver *resolv, ldns_rdf *zone, ldns_rdf *record,
 
     ret = ldns_resolver_send_pkt(&updanspkt, resolv, updpkt);
 
-    if (ret != LDNS_STATUS_OK) {
-        log(LOG_WARNING, "Failed to send query to DNS server: %s", ldns_get_errorstr_by_id(ret));
-        goto fail;
-    }
+    ldns_pkt_rcode rcode = ldns_pkt_get_rcode(updanspkt);
 
-    if (verify)
-        dns_verify_update(resolv, record, rd, delete);
+    if (ret == LDNS_STATUS_OK && rcode != LDNS_RCODE_NOERROR) {
+        log(LOG_WARNING, "Failed to query DNS server: %s", dns_get_errorstr_by_rcode(rcode));
+    } else if (ret != LDNS_STATUS_OK) {
+        log(LOG_WARNING, "Failed to query DNS server: %s", ldns_get_errorstr_by_id(ret));
+    }
 
 fail:
     ldns_pkt_free(updanspkt);
     ldns_pkt_free(updpkt);
+}
+
+void dns_do_update(ldns_resolver *resolv, ldns_rdf *zone, ldns_rdf *record,
+        const struct sockaddr *addr, bool delete, uint32_t ttl)
+{
+    ldns_rr *updrr = dns_prepare_update_rr(record, addr, delete, ttl);
+    ldns_rr_list *updrrlist = ldns_rr_list_new();
+
+    if (!ldns_rr_list_push_rr(updrrlist, updrr))
+        die(EX_SOFTWARE, "Failed to allocate memory");
+
+    dns_send_update(zone, updrrlist, resolv);
+
     ldns_rr_list_deep_free(updrrlist);
 }
