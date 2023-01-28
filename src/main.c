@@ -25,7 +25,7 @@ int main(int argc, char * const *argv)
                 confpath = optarg;
                 break;
             case 'v':
-                printf("%s v" VERSION " built on " __TIME__ ", " __DATE__ "\n", argv[0]);
+                printf("%s v" VERSION " built on " __TIME__ ", " __DATE__ "\n", progname);
                 return EX_OK;
             case 's':
                 logmode = LOG_MODE_STDOUT;
