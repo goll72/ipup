@@ -2,4 +2,6 @@
 
  - [ ] Add tests
  - [x] Implement `verify-update`
- - [ ] Synchronize address table state with DNS server(s) on startup
+ - [x] Synchronize address table state with DNS server(s) on startup
+ - [x] Better log messages
+ - [ ] More update backends
