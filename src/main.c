@@ -14,15 +14,20 @@
 int main(int argc, char * const *argv)
 {
     int opt;
+
+    bool oneshot = false;
     char *confpath = NULL;
     enum log_mode logmode = LOG_MODE_DEFAULT;
 
     const char *progname = basename(argv[0]);
 
-    while ((opt = getopt(argc, argv, "c:vsSh")) != -1) {
+    while ((opt = getopt(argc, argv, "c:ovsSh")) != -1) {
         switch (opt) {
             case 'c':
                 confpath = optarg;
+                break;
+            case 'o':
+                oneshot = true;
                 break;
             case 'v':
                 printf("%s v" VERSION " built on " __TIME__ ", " __DATE__ "\n", progname);
@@ -35,12 +40,13 @@ int main(int argc, char * const *argv)
                 break;
             case 'h': default:
                 fprintf(stderr,
-                        "Usage: %s [ -v | -h | -c <conf> ]\n"
+                        "Usage: %s [ -v | -h | -c <conf> | -s | -S | -o ]\n"
                         "  -h    Shows this help menu\n"
                         "  -v    Version information\n"
                         "  -s    Log to stdout\n"
                         "  -S    Log to syslog\n"
-                        "  -c    Specify configuration file path\n", progname);
+                        "  -c    Specify configuration file path\n"
+                        "  -o    Oneshot mode\n", progname);
                 return opt == 'h' ? EX_OK : EX_USAGE;
         }
     }
@@ -105,7 +111,10 @@ int main(int argc, char * const *argv)
 
     fclose(conf);
 
-    struct nl_cache_mngr *nlmngr = nl_run(&confmap);
+    struct nl_cache_mngr *nlmngr = nl_sync(&confmap);
+
+    if (!oneshot)
+        nl_run(nlmngr);
 
     log_close();
     conf_free(confmap);

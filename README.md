@@ -22,20 +22,25 @@ libnl-route separately.
 
 Simply clone the repository:
 
-```
+```sh
 $ git clone https://github.com/goll72/ipup
 ```
 
 and run
 
-```
+```sh
 $ meson setup build
 $ meson compile -C build
 ```
 
+Note that you may want to set the `sysconfdir` option to `/etc` on Linux,
+otherwise ipup will look for the systemwide configuration file in
+`$(prefix)/$(sysconfdir)`, which is `/usr/local/etc` by default. You can set
+it by adding `-Dsysconfdir=/etc` to the `meson setup` invocation.
+
 To install, run
 
-```
+```sh
 $ meson install -C build
 ```
 
@@ -116,9 +121,12 @@ but they must be fully specified in only one or the other.
 Specify a configuration file with the `-c` option, otherwise it will
 look for a configuration file in:
 
- * `/etc/ipup/conf`
+ * `$(sysconfdir)/ipup/conf`
  * `$XDG_CONFIG_HOME/ipup/conf`
  * `~/.ipup.conf`
+
+Ipup can be run in oneshot with the `-o` option. When in oneshot mode, it
+will only synchronize the DNS records with the host addresses and exit.
 
 # Notes
 

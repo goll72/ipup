@@ -255,7 +255,7 @@ static struct nl_cache_mngr *nl_setup(struct conf *conf)
     return nlmngr;
 }
 
-struct nl_cache_mngr *nl_run(struct conf *conf)
+struct nl_cache_mngr *nl_sync(struct conf *conf)
 {
     struct nl_cache_mngr *nlmngr = nl_setup(conf);
 
@@ -278,6 +278,11 @@ struct nl_cache_mngr *nl_run(struct conf *conf)
 
     map_free_serv_rr(servrrlist);
 
+    return nlmngr;
+}
+
+void nl_run(struct nl_cache_mngr *nlmngr)
+{
     // Runs until an error occurs or the user requests termination
     while (1) {
         int ret = nl_cache_mngr_poll(nlmngr, -1);
@@ -288,8 +293,6 @@ struct nl_cache_mngr *nl_run(struct conf *conf)
         if (ret < 0)
             die(EX_OSERR, "Failed to poll on Netlink channel: %s", nl_geterror(ret));
     }
-
-    return nlmngr;
 }
 
 void nl_free(struct nl_cache_mngr *nlmngr)
