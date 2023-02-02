@@ -79,9 +79,8 @@ static bool str_to_time_duration(unsigned long long *out, const char *str)
         duration += base;
         str = end + 1;
 
-        if (*end == ' ' || *end == '\t') {
+        if (*end == ' ' || *end == '\t')
             continue;
-        }
 
         // Compares the specifier bitmask with the previous
         // one, if a bit that was set got unset a specifier
@@ -145,11 +144,16 @@ static int handle_servconf(struct conf *conf, const char *server,
         fseek(keyfile, 0L, SEEK_END);
 
         size_t keysize = ftell(keyfile);
-        servconf->cred.keydata = xmalloc(keysize);
+        char *tmp = xmalloc(keysize);
 
         fseek(keyfile, 0L, SEEK_SET);
 
-        fread((void *)servconf->cred.keydata, 1, keysize, keyfile);
+        fread(tmp, 1, keysize, keyfile);
+
+        if (tmp[keysize - 1] == '\n')
+            tmp[keysize - 1] = '\0';
+
+        servconf->cred.keydata = tmp;
         fclose(keyfile);
     } else if (strcmp(name, "key-algo") == 0) {
         ldns_lookup_table *lt = ldns_signing_algorithms;
