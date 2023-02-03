@@ -168,12 +168,16 @@ void dns_send_update(ldns_rdf *zone, ldns_rr_list *updrrlist, ldns_resolver *res
 
     ret = ldns_resolver_send_pkt(&updanspkt, resolv, updpkt);
 
+    if (ret != LDNS_STATUS_OK) {
+        log(LOG_WARNING, "Failed to query DNS server: %s", ldns_get_errorstr_by_id(ret));
+        goto fail;
+    }
+
     ldns_pkt_rcode rcode = ldns_pkt_get_rcode(updanspkt);
 
-    if (ret == LDNS_STATUS_OK && rcode != LDNS_RCODE_NOERROR) {
+    if (rcode != LDNS_RCODE_NOERROR) {
         log(LOG_WARNING, "Failed to query DNS server: %s", dns_get_errorstr_by_rcode(rcode));
-    } else if (ret != LDNS_STATUS_OK) {
-        log(LOG_WARNING, "Failed to query DNS server: %s", ldns_get_errorstr_by_id(ret));
+        goto fail;
     }
 
 fail:

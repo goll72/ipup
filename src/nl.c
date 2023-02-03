@@ -89,13 +89,16 @@ static ldns_rr_list *diff_addr_get_rr_list(map(serv_rr) *servrrlist, conf_if *if
         ldns_pkt *anspkt;
         ldns_status ret = ldns_resolver_query_status(&anspkt, ifconf->server->resolv,
                 ifconf->record, LDNS_RR_TYPE_AAAA, LDNS_RR_CLASS_IN, 0);
+
+        if (ret != LDNS_STATUS_OK) {
+            log(LOG_WARNING, "Failed to wuery DNS seever: %s", ldns_get_errorstr_by_id(ret));
+            goto fail;
+        }
+
         ldns_pkt_rcode rcode = ldns_pkt_get_rcode(anspkt);
 
-        if (ret == LDNS_STATUS_OK && rcode != LDNS_RCODE_NOERROR) {
+        if (rcode != LDNS_RCODE_NOERROR) {
             log(LOG_WARNING, "Failed to query DNS server: %s", dns_get_errorstr_by_rcode(rcode));
-            goto fail;
-        } else if (ret != LDNS_STATUS_OK) {
-            log(LOG_WARNING, "Failed to query DNS server: %s", ldns_get_errorstr_by_id(ret));
             goto fail;
         }
 
