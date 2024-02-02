@@ -130,7 +130,16 @@ will only synchronize the DNS records with the host addresses and exit.
 
 # Notes
 
+## IPv4
+
 Only IPv6 is supported, as IPv4 needs an external host to be able to tell your
 public IPv4 address. That much is manageable, however, polling for address
-changes is not. Methods such as assuming IPv4 leases expire alongside IPv6
-leases on dual-stack systems could work, I'm not sure.
+changes is not. Also, most commonly, IPv4 networks have NATs in place, which makes
+keeping track of an external IPv4 address pretty much useless.
+
+## Couldn't you do the same thing with `ip monitor`?
+
+Yes, but in some badly configured IPv6 setups (like mine), spurious router 
+advertisements can flood the Netlink queue with duplicate addresses, so it's 
+more ergonomic and more efficient to figure out if an address really has changed 
+in C than in a shell script, for instance.
