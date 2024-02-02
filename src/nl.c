@@ -91,7 +91,7 @@ static ldns_rr_list *diff_addr_get_rr_list(map(serv_rr) *servrrlist, conf_if *if
                 ifconf->record, LDNS_RR_TYPE_AAAA, LDNS_RR_CLASS_IN, 0);
 
         if (ret != LDNS_STATUS_OK) {
-            log(LOG_WARNING, "Failed to wuery DNS seever: %s", ldns_get_errorstr_by_id(ret));
+            log(LOG_WARNING, "Failed to query DNS server: %s", ldns_get_errorstr_by_id(ret));
             goto fail;
         }
 
