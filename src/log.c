@@ -24,6 +24,7 @@ void log_init(const char *ident, enum log_mode mode)
 		openlog(ident, LOG_PID, LOG_DAEMON);
 
 	state.mode = mode;
+	state.mask = 0;
 }
 
 void log_close(void)

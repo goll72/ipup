@@ -9,8 +9,8 @@
 
 enum log_mode {
     LOG_MODE_DEFAULT,
-	LOG_MODE_STDOUT,
-	LOG_MODE_SYSLOG
+    LOG_MODE_STDOUT,
+    LOG_MODE_SYSLOG
 };
 
 void log_init(const char *ident, enum log_mode mode);
@@ -28,9 +28,9 @@ void slog(int prio, const char *fmt, ...);
     slog(prio, "[" S_##prio "] " __VA_ARGS__)
 
 #define die(code, ...)  \
-	do {                \
-		log(LOG_ERR, __VA_ARGS__);  \
-	    exit(code);                 \
-	} while (0)
+    do {                \
+        log(LOG_ERR, __VA_ARGS__);  \
+        exit(code);                 \
+    } while (0)
 
 #endif /* LOG_H */
