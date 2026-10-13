@@ -143,13 +143,14 @@ static int handle_servconf(struct conf *conf, const char *server,
         fseek(keyfile, 0L, SEEK_END);
 
         size_t keysize = ftell(keyfile);
-        char *tmp = xmalloc(keysize);
+        char *tmp = xmalloc(keysize + 1);
 
         fseek(keyfile, 0L, SEEK_SET);
 
         fread(tmp, 1, keysize, keyfile);
+        tmp[keysize] = '\0';
 
-        if (tmp[keysize - 1] == '\n')
+        if (keysize > 0 && tmp[keysize - 1] == '\n')
             tmp[keysize - 1] = '\0';
 
         servconf->cred.keydata = tmp;
