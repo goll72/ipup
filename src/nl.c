@@ -21,6 +21,18 @@ struct rtnl_addr_prop {
     int scope, ifidx, validlft;
 };
 
+// Check whether an IPv6 address is in the ULA range (fc::/7)
+static bool is_ula(const struct sockaddr *addr)
+{
+    if (addr->sa_family != AF_INET6)
+        return false;
+
+    const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)addr;
+    uint8_t first = sin6->sin6_addr.s6_addr[0];
+
+    return (first & 0xfe) == 0xfc;
+}
+
 static void rtnl_addr_get_prop(struct nl_object *obj, struct rtnl_addr_prop *prop)
 {
     struct rtnl_addr *rtaddr = (struct rtnl_addr *)obj;
@@ -75,7 +87,7 @@ static void cache_change_cb(struct nl_cache *cache,
 
     // We are only interested in global scope
     // addresses and we do not support IPv4
-    if (prop.scope != 0 || addr->sa_family == AF_INET)
+    if (prop.scope != 0 || addr->sa_family == AF_INET || is_ula(addr))
         return;
 
     nl_dns_do_update(&prop, conf, action == NL_ACT_DEL);
@@ -141,7 +153,7 @@ static bool diff_addr_ifconf(const char *key, conf_if *ifconf, void *arg)
         struct sockaddr *addr = (struct sockaddr *)&prop.addr;
 
         // Remove useless entries
-        if (prop.scope != 0 || addr->sa_family == AF_INET) {
+        if (prop.scope != 0 || addr->sa_family == AF_INET || is_ula(addr)) {
             nl_cache_remove(obj);
             continue;
         }
